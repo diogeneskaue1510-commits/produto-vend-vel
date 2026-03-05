@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ProduTrack — Painel Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--n950:#02060e;--n900:#050d1c;--n800:#0b1938;--n700:#122858;--n600:#1a3a7a;--b400:#2563eb;--b300:#4a85f5;--cyan:#06b6d4;--white:#f0f5ff;--g500:#4b5e80;--g400:#7a90b0;--g300:#a8bbd4;--ok:#10b981;--err:#ef4444;--warn:#f59e0b;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--n950);color:var(--white);min-height:100vh;-webkit-font-smoothing:antialiased}
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(37,99,235,.18) 0%,transparent 60%),var(--n950)}
+.login-box{width:100%;max-width:380px;background:var(--n900);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:36px;box-shadow:0 8px 48px rgba(0,0,0,.65)}
+.login-ic{width:52px;height:52px;margin:0 auto 14px;background:linear-gradient(135deg,#7c3aed,var(--b400));border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px}
+h2{text-align:center;font-size:1.3rem;font-weight:800;margin-bottom:4px}
+.sub{text-align:center;font-size:.75rem;color:var(--g400);margin-bottom:24px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--g400)}
+.field input{background:var(--n800);border:1.5px solid rgba(255,255,255,.08);border-radius:9px;color:var(--white);font-family:'Plus Jakarta Sans',sans-serif;font-size:.9rem;padding:11px 14px;transition:all .2s}
+.field input:focus{outline:none;border-color:var(--b300);box-shadow:0 0 0 3px rgba(74,133,245,.14)}
+.btn-login{width:100%;padding:12px;border:none;border-radius:9px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.92rem;font-weight:800;background:linear-gradient(135deg,#7c3aed,var(--b400));color:#fff;box-shadow:0 4px 18px rgba(124,58,237,.4);transition:all .2s;margin-top:6px}
+.btn-login:hover{transform:translateY(-1px);box-shadow:0 7px 26px rgba(124,58,237,.55)}
+.err-msg{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#fca5a5;font-size:.8rem;padding:10px 14px;border-radius:9px;text-align:center;margin-top:12px;display:none}
+#adminScreen{display:none;min-height:100vh}
+.topbar{background:var(--n900);border-bottom:1px solid rgba(255,255,255,.06);padding:0 24px;height:56px;display:flex;align-items:center;gap:12px}
+.topbar-logo{display:flex;align-items:center;gap:9px}
+.logo-ic{width:32px;height:32px;background:linear-gradient(135deg,#7c3aed,var(--b400));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.logo-txt{font-size:.95rem;font-weight:800}
+.badge-admin{background:linear-gradient(135deg,rgba(124,58,237,.3),rgba(37,99,235,.2));border:1px solid rgba(124,58,237,.3);border-radius:20px;padding:3px 10px;font-size:.62rem;font-weight:700;color:#c4b5fd;text-transform:uppercase;letter-spacing:.07em}
+.btn-sair{margin-left:auto;padding:7px 14px;background:rgba(239,68,68,.09);border:1px solid rgba(239,68,68,.18);border-radius:8px;color:#fca5a5;font-family:'Plus Jakarta Sans',sans-serif;font-size:.78rem;font-weight:700;cursor:pointer;transition:all .18s}
+.btn-sair:hover{background:rgba(239,68,68,.18)}
+.content{padding:28px 24px;max-width:1100px;margin:0 auto}
+.page-title{font-size:1.4rem;font-weight:800;letter-spacing:-.03em;margin-bottom:4px}
+.page-sub{font-size:.8rem;color:var(--g400);margin-bottom:24px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat{background:var(--n900);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 18px}
+.stat-lbl{font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--g400);margin-bottom:6px}
+.stat-val{font-family:'JetBrains Mono',monospace;font-size:1.8rem;font-weight:700}
+.stat-val.pendente{color:var(--warn)}
+.stat-val.ativo{color:var(--ok)}
+.stat-val.bloqueado{color:var(--err)}
+.stat-val.total{color:var(--b300)}
+.filtro-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.finput{background:var(--n800);border:1.5px solid rgba(255,255,255,.08);border-radius:8px;color:var(--white);font-family:'Plus Jakarta Sans',sans-serif;font-size:.85rem;padding:8px 12px}
+.finput:focus{outline:none;border-color:var(--b300)}
+select.finput{cursor:pointer}
+.btn-refresh{padding:8px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--white);font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:700;cursor:pointer;transition:all .18s}
+.btn-refresh:hover{background:rgba(255,255,255,.12)}
+.table-wrap{background:var(--n900);border:1px solid rgba(255,255,255,.06);border-radius:14px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{font-size:.65rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--g400);padding:12px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)}
+td{padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.83rem;font-weight:500;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:.65rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.badge.pendente{background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.25);color:#fcd34d}
+.badge.ativo{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.25);color:#6ee7b7}
+.badge.bloqueado{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
+.badge-plano{display:inline-flex;padding:3px 9px;border-radius:20px;font-size:.63rem;font-weight:700;text-transform:uppercase;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.25);color:var(--b300)}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.btn-aprovar{padding:6px 12px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.25);border-radius:7px;color:#6ee7b7;font-family:'Plus Jakarta Sans',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer;transition:all .15s}
+.btn-aprovar:hover{background:rgba(16,185,129,.28)}
+.btn-bloquear{padding:6px 12px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.2);border-radius:7px;color:#fca5a5;font-family:'Plus Jakarta Sans',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer;transition:all .15s}
+.btn-bloquear:hover{background:rgba(239,68,68,.22)}
+.btn-plano{padding:6px 12px;background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.2);border-radius:7px;color:var(--b300);font-family:'Plus Jakarta Sans',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer;transition:all .15s}
+.btn-plano:hover{background:rgba(37,99,235,.22)}
+select.plano-sel{background:var(--n700);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:var(--white);padding:4px 8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:.75rem;cursor:pointer}
+.empty{text-align:center;padding:40px;color:var(--g400)}
+.toasts{position:fixed;bottom:20px;right:20px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--n800);border:1px solid rgba(255,255,255,.1);border-radius:9px;padding:10px 15px;font-size:.81rem;font-weight:500;display:flex;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:tIn .23s ease;min-width:220px}
+.toast.ok{border-left:3px solid var(--ok)}.toast.err{border-left:3px solid var(--err)}
+@keyframes tIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:translateX(0)}}
+.loader{display:none;position:fixed;inset:0;background:rgba(2,6,14,.9);z-index:300;align-items:center;justify-content:center}
+.loader.show{display:flex}
+.spinner{width:34px;height:34px;border:3px solid rgba(255,255,255,.08);border-top-color:var(--cyan);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:768px){.stats{grid-template-columns:repeat(2,1fr)}.content{padding:16px}.actions{flex-direction:column}}
+</style>
+</head>
+<body>
+
+<div class="loader" id="loader"><div class="spinner"></div></div>
+
+<!-- LOGIN ADMIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-ic">🔐</div>
+    <h2>Painel Admin</h2>
+    <div class="sub">ProduTrack Pro — Área restrita</div>
+    <div class="field"><label>Senha de administrador</label><input type="password" id="adminSenha" placeholder="••••••••••••" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div>
+    <button class="btn-login" onclick="doAdminLogin()">Entrar no painel</button>
+    <div class="err-msg" id="errMsg">Senha incorreta.</div>
+  </div>
+</div>
+
+<!-- PAINEL ADMIN -->
+<div id="adminScreen">
+  <div class="topbar">
+    <div class="topbar-logo">
+      <div class="logo-ic">⚙️</div>
+      <div class="logo-txt">ProduTrack <span style="color:var(--cyan)">Pro</span></div>
+    </div>
+    <div class="badge-admin">🔐 Admin</div>
+    <button class="btn-sair" onclick="sair()">↩ Sair</button>
+  </div>
+
+  <div class="content">
+    <div class="page-title">Gerenciar Usuários</div>
+    <div class="page-sub">Aprove, bloqueie e gerencie os planos dos clientes</div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Total</div><div class="stat-val total" id="sTot">0</div></div>
+      <div class="stat"><div class="stat-lbl">⏳ Pendentes</div><div class="stat-val pendente" id="sPend">0</div></div>
+      <div class="stat"><div class="stat-lbl">✅ Ativos</div><div class="stat-val ativo" id="sAtiv">0</div></div>
+      <div class="stat"><div class="stat-lbl">🚫 Bloqueados</div><div class="stat-val bloqueado" id="sBloc">0</div></div>
+    </div>
+
+    <div class="filtro-bar">
+      <input type="text" class="finput" id="busca" placeholder="🔍 Buscar por nome ou e-mail..." oninput="filtrar()" style="min-width:240px"/>
+      <select class="finput" id="filtroStatus" onchange="filtrar()">
+        <option value="">Todos os status</option>
+        <option value="pendente">⏳ Pendente</option>
+        <option value="ativo">✅ Ativo</option>
+        <option value="bloqueado">🚫 Bloqueado</option>
+      </select>
+      <button class="btn-refresh" onclick="carregar()">↺ Atualizar</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Status</th><th>Plano</th><th>Cadastro</th><th>Ações</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="empty">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+const API = '/api/admin';
+let adminSecret = '';
+let usuarios = [];
+
+// ── Login ──
+function doAdminLogin() {
+  const s = document.getElementById('adminSenha').value;
+  if (!s) return;
+  adminSecret = s;
+  carregar();
+}
+
+// ── Carregar usuários ──
+async function carregar() {
+  loading(true);
+  try {
+    const r = await fetch(`${API}/usuarios`, { headers: { 'Authorization': 'Bearer ' + adminSecret } });
+    if (r.status === 401 || r.status === 403) {
+      document.getElementById('errMsg').style.display = 'block';
+      adminSecret = '';
+      loading(false);
+      return;
+    }
+    usuarios = await r.json();
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('adminScreen').style.display = 'block';
+    document.getElementById('errMsg').style.display = 'none';
+    atualizarStats();
+    filtrar();
+  } catch (e) { toast('Erro de conexão.', 'err'); }
+  finally { loading(false); }
+}
+
+function atualizarStats() {
+  document.getElementById('sTot').textContent = usuarios.length;
+  document.getElementById('sPend').textContent = usuarios.filter(u => u.status === 'pendente').length;
+  document.getElementById('sAtiv').textContent = usuarios.filter(u => u.status === 'ativo').length;
+  document.getElementById('sBloc').textContent = usuarios.filter(u => u.status === 'bloqueado').length;
+}
+
+function filtrar() {
+  const txt = document.getElementById('busca').value.toLowerCase();
+  const st = document.getElementById('filtroStatus').value;
+  const lista = usuarios.filter(u =>
+    (!txt || u.nome.toLowerCase().includes(txt) || u.email.toLowerCase().includes(txt)) &&
+    (!st || u.status === st)
+  );
+  renderTabela(lista);
+}
+
+function renderTabela(lista) {
+  const tbody = document.getElementById('tbody');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">Nenhum usuário encontrado</td></tr>'; return; }
+  tbody.innerHTML = lista.map(u => {
+    const dt = new Date(u.criado_em).toLocaleDateString('pt-BR');
+    const badges = { pendente: '⏳ Pendente', ativo: '✅ Ativo', bloqueado: '🚫 Bloqueado' };
+    const acoes = u.status === 'pendente'
+      ? `<select class="plano-sel" id="plano-${u.id}">
+           <option value="free">Free</option>
+           <option value="starter" selected>Starter</option>
+           <option value="pro">Pro</option>
+           <option value="empresa">Empresa</option>
+         </select>
+         <button class="btn-aprovar" onclick="aprovar('${u.id}')">✅ Aprovar</button>
+         <button class="btn-bloquear" onclick="bloquear('${u.id}')">🚫 Bloquear</button>`
+      : u.status === 'ativo'
+      ? `<select class="plano-sel" id="plano-${u.id}" onchange="alterarPlano('${u.id}')">
+           <option value="free" ${u.plano==='free'?'selected':''}>Free</option>
+           <option value="starter" ${u.plano==='starter'?'selected':''}>Starter</option>
+           <option value="pro" ${u.plano==='pro'?'selected':''}>Pro</option>
+           <option value="empresa" ${u.plano==='empresa'?'selected':''}>Empresa</option>
+         </select>
+         <button class="btn-bloquear" onclick="bloquear('${u.id}')">🚫 Bloquear</button>`
+      : `<button class="btn-aprovar" onclick="aprovar('${u.id}')">✅ Reativar</button>`;
+
+    return `<tr>
+      <td style="font-weight:700">${esc(u.nome)}</td>
+      <td style="color:var(--g300);font-family:'JetBrains Mono',monospace;font-size:.75rem">${esc(u.email)}</td>
+      <td><span class="badge ${u.status}">${badges[u.status]||u.status}</span></td>
+      <td><span class="badge-plano">${u.plano}</span></td>
+      <td style="color:var(--g400);font-size:.75rem">${dt}</td>
+      <td><div class="actions">${acoes}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function aprovar(id) {
+  const planoEl = document.getElementById('plano-' + id);
+  const plano = planoEl ? planoEl.value : 'starter';
+  loading(true);
+  try {
+    const r = await fetch(`${API}/usuarios/${id}/aprovar`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminSecret, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plano })
+    });
+    if (!r.ok) { toast('Erro ao aprovar.', 'err'); return; }
+    toast('Usuário aprovado! ✅', 'ok');
+    await carregar();
+  } catch { toast('Erro.', 'err'); }
+  finally { loading(false); }
+}
+
+async function bloquear(id) {
+  if (!confirm('Bloquear este usuário?')) return;
+  loading(true);
+  try {
+    const r = await fetch(`${API}/usuarios/${id}/bloquear`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminSecret, 'Content-Type': 'application/json' }
+    });
+    if (!r.ok) { toast('Erro ao bloquear.', 'err'); return; }
+    toast('Usuário bloqueado.', 'ok');
+    await carregar();
+  } catch { toast('Erro.', 'err'); }
+  finally { loading(false); }
+}
+
+async function alterarPlano(id) {
+  const plano = document.getElementById('plano-' + id).value;
+  try {
+    const r = await fetch(`${API}/usuarios/${id}/plano`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminSecret, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plano })
+    });
+    if (!r.ok) { toast('Erro ao alterar plano.', 'err'); return; }
+    toast(`Plano alterado para ${plano}! ✅`, 'ok');
+    const u = usuarios.find(x => x.id === id);
+    if (u) { u.plano = plano; atualizarStats(); }
+  } catch { toast('Erro.', 'err'); }
+}
+
+function sair() { adminSecret = ''; document.getElementById('adminScreen').style.display = 'none'; document.getElementById('loginScreen').style.display = 'flex'; document.getElementById('adminSenha').value = ''; }
+function loading(v) { document.getElementById('loader').classList.toggle('show', v); }
+function toast(msg, tipo = 'ok') { const c = document.getElementById('toasts'), t = document.createElement('div'); t.className = `toast ${tipo}`; t.innerHTML = `<span>${tipo === 'ok' ? '✅' : '❌'}</span>${msg}`; c.appendChild(t); setTimeout(() => { t.style.cssText = 'opacity:0;transform:translateX(14px);transition:all .28s'; setTimeout(() => t.remove(), 300); }, 3200); }
+function esc(s) { if (!s) return ''; return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+</script>
+</body>
+</html>
