@@ -315,7 +315,8 @@ app.get('/api/exportar/excel', auth, async (req, res) => {
 
 // SPA catch-all
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/public/index.html'));
+  const file = req.path === '/admin.html' ? 'admin.html' : 'index.html';
+  res.sendFile(path.join(__dirname, '../frontend/public', file));
 });
 
 // ─── START ─────────────────────────────────────────────
