@@ -9,7 +9,6 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Inicializa as tabelas do banco
 async function initDB() {
   const client = await pool.connect();
   try {
@@ -20,6 +19,7 @@ async function initDB() {
         email       TEXT NOT NULL UNIQUE,
         senha_hash  TEXT NOT NULL,
         plano       TEXT NOT NULL DEFAULT 'free',
+        status      TEXT NOT NULL DEFAULT 'pendente',
         ativo       BOOLEAN DEFAULT true,
         criado_em   TIMESTAMPTZ DEFAULT NOW()
       );
@@ -44,6 +44,17 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_registros_usuario ON registros(usuario_id);
       CREATE INDEX IF NOT EXISTS idx_registros_criado  ON registros(criado_em);
     `);
+
+    // Adiciona coluna status se não existir (migração para banco já existente)
+    await client.query(`
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pendente';
+    `);
+
+    // Usuários já existentes ficam como 'ativo' automaticamente
+    await client.query(`
+      UPDATE usuarios SET status = 'ativo' WHERE status = 'pendente' AND criado_em < NOW() - INTERVAL '1 minute';
+    `);
+
     console.log('✅ Banco de dados inicializado.');
   } finally {
     client.release();

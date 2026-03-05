@@ -1,0 +1,4 @@
+DATABASE_URL=postgresql://postgres:zWjBGbdIbtnUCGtlFlDNFcFSEpVbMKkI@interchange.proxy.rlwy.net:14306/railway
+JWT_SECRET=produtrack_secreto_2024
+PORT=3001
+NODE_ENV=development

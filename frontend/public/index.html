@@ -544,7 +544,12 @@ async function doLogin(){
   try{
     const r=await fetch(`${API}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,senha})});
     const d=await r.json();
-    if(!r.ok){showMsg(d.erro,'err');return;}
+    if(!r.ok){
+      if(d.erro==='pendente'){showMsg('⏳ Sua conta está aguardando aprovação do administrador. Você receberá acesso em breve.','err');}
+      else if(d.erro==='bloqueado'){showMsg('🚫 Sua conta foi bloqueada. Entre em contato com o suporte.','err');}
+      else{showMsg(d.erro,'err');}
+      return;
+    }
     saveAuth(d.token,d.usuario); mostrarApp();
   }catch{showMsg('Erro de conexão. Servidor rodando?','err');}
   finally{loading(false);}
@@ -559,7 +564,10 @@ async function doCad(){
     const r=await fetch(`${API}/auth/cadastro`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,email,senha})});
     const d=await r.json();
     if(!r.ok){showMsg(d.erro,'err');return;}
-    saveAuth(d.token,d.usuario); mostrarApp(); toast('Conta criada! Bem-vindo(a) 🎉','ok');
+    showMsg('✅ Cadastro realizado! Aguarde a aprovação do administrador para acessar o sistema.','ok');
+    document.getElementById('cNome').value='';
+    document.getElementById('cEmail').value='';
+    document.getElementById('cSenha').value='';
   }catch{showMsg('Erro de conexão.','err');}
   finally{loading(false);}
 }

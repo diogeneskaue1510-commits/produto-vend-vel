@@ -16,6 +16,7 @@ const { pool, initDB } = require('./db');
 const app    = express();
 const PORT   = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_prod';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'admin_produtrack_2024';
 
 app.use(cors());
 app.use(express.json());
@@ -44,6 +45,15 @@ function auth(req, res, next) {
   }
 }
 
+// ─── ADMIN MIDDLEWARE ─────────────────────────────────────────
+function adminAuth(req, res, next) {
+  const h = req.headers['authorization'];
+  if (!h) return res.status(401).json({ erro: 'Não autorizado' });
+  const token = h.split(' ')[1];
+  if (token !== ADMIN_SECRET) return res.status(403).json({ erro: 'Acesso negado' });
+  next();
+}
+
 // ═══════════════════════════════════════════════════════
 // ROTAS AUTH
 // ═══════════════════════════════════════════════════════
@@ -62,13 +72,14 @@ app.post('/api/auth/cadastro', async (req, res) => {
       return res.status(409).json({ erro: 'Este e-mail já está cadastrado' });
 
     const hash = await bcrypt.hash(senha, 10);
-    const { rows } = await pool.query(
-      'INSERT INTO usuarios (nome,email,senha_hash) VALUES ($1,$2,$3) RETURNING id,nome,email,plano',
-      [nome.trim(), email.toLowerCase().trim(), hash]
+    await pool.query(
+      'INSERT INTO usuarios (nome,email,senha_hash,status) VALUES ($1,$2,$3,$4)',
+      [nome.trim(), email.toLowerCase().trim(), hash, 'pendente']
     );
-    const u = rows[0];
-    const token = jwt.sign({ id: u.id, nome: u.nome, email: u.email, plano: u.plano }, SECRET, { expiresIn: '7d' });
-    res.status(201).json({ token, usuario: u });
+
+    res.status(201).json({
+      mensagem: 'Cadastro realizado! Aguarde a aprovação do administrador para acessar o sistema.'
+    });
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
@@ -83,6 +94,8 @@ app.post('/api/auth/login', async (req, res) => {
 
     const u = rows[0];
     if (!u.ativo) return res.status(403).json({ erro: 'Conta desativada' });
+    if (u.status === 'pendente') return res.status(403).json({ erro: 'pendente' });
+    if (u.status === 'bloqueado') return res.status(403).json({ erro: 'bloqueado' });
     if (!await bcrypt.compare(senha, u.senha_hash))
       return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
 
@@ -99,35 +112,82 @@ app.get('/api/auth/me', auth, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════
+// ROTAS ADMIN
+// ═══════════════════════════════════════════════════════
+
+// Listar todos os usuários
+app.get('/api/admin/usuarios', adminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nome, email, plano, status, ativo, criado_em FROM usuarios ORDER BY criado_em DESC'
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ erro: err.message }); }
+});
+
+// Aprovar usuário
+app.post('/api/admin/usuarios/:id/aprovar', adminAuth, async (req, res) => {
+  try {
+    const { plano } = req.body;
+    const { rows } = await pool.query(
+      'UPDATE usuarios SET status=$1, plano=$2 WHERE id=$3 RETURNING id, nome, email, status, plano',
+      ['ativo', plano || 'starter', req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ erro: err.message }); }
+});
+
+// Bloquear usuário
+app.post('/api/admin/usuarios/:id/bloquear', adminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'UPDATE usuarios SET status=$1 WHERE id=$2 RETURNING id, nome, email, status',
+      ['bloqueado', req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ erro: err.message }); }
+});
+
+// Alterar plano
+app.post('/api/admin/usuarios/:id/plano', adminAuth, async (req, res) => {
+  try {
+    const { plano } = req.body;
+    const { rows } = await pool.query(
+      'UPDATE usuarios SET plano=$1 WHERE id=$2 RETURNING id, nome, email, plano',
+      [plano, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ erro: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════
 // ROTAS REGISTROS
 // ═══════════════════════════════════════════════════════
 
-// Listar com filtro de período
 app.get('/api/registros', auth, async (req, res) => {
   try {
     const { inicio, fim, produto } = req.query;
     let sql = 'SELECT * FROM registros WHERE usuario_id=$1';
     const params = [req.user.id];
     let i = 2;
-
     if (inicio) { sql += ` AND criado_em >= $${i++}`; params.push(inicio); }
     if (fim)    { sql += ` AND criado_em <= $${i++}`; params.push(fim + ' 23:59:59'); }
     if (produto){ sql += ` AND LOWER(produto_nome) LIKE $${i++}`; params.push('%' + produto.toLowerCase() + '%'); }
-
     sql += ' ORDER BY criado_em DESC';
     const { rows } = await pool.query(sql, params);
     res.json(rows);
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Criar
 app.post('/api/registros', auth, async (req, res) => {
   try {
     const { produto_nome, observacao } = req.body;
     if (!produto_nome?.trim()) return res.status(400).json({ erro: 'Nome do produto é obrigatório' });
     const total = calcTotal(req.body);
     if (total === 0) return res.status(400).json({ erro: 'Informe ao menos um processo com tempo maior que zero' });
-
     const vals = PROCS.map(k => parseInt(req.body[k]) || 0);
     const { rows } = await pool.query(`
       INSERT INTO registros (usuario_id,produto_nome,separacao,logistica,montagem,pintura,acabamento,parado,imprevistos,total_minutos,observacao)
@@ -138,15 +198,12 @@ app.post('/api/registros', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Atualizar
 app.put('/api/registros/:id', auth, async (req, res) => {
   try {
     const { produto_nome, observacao } = req.body;
     if (!produto_nome?.trim()) return res.status(400).json({ erro: 'Nome do produto é obrigatório' });
-
     const existe = await pool.query('SELECT id FROM registros WHERE id=$1 AND usuario_id=$2', [req.params.id, req.user.id]);
     if (!existe.rows.length) return res.status(404).json({ erro: 'Registro não encontrado' });
-
     const vals = PROCS.map(k => parseInt(req.body[k]) || 0);
     const total = calcTotal(req.body);
     const { rows } = await pool.query(`
@@ -158,7 +215,6 @@ app.put('/api/registros/:id', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Excluir
 app.delete('/api/registros/:id', auth, async (req, res) => {
   try {
     const r = await pool.query('DELETE FROM registros WHERE id=$1 AND usuario_id=$2 RETURNING id', [req.params.id, req.user.id]);
@@ -168,7 +224,7 @@ app.delete('/api/registros/:id', auth, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════
-// DASHBOARD — estatísticas
+// DASHBOARD
 // ═══════════════════════════════════════════════════════
 app.get('/api/dashboard', auth, async (req, res) => {
   try {
@@ -181,10 +237,8 @@ app.get('/api/dashboard', auth, async (req, res) => {
     if (fim)    { where += ` AND criado_em <= $${i++}`; params.push(fim + ' 23:59:59'); }
 
     const [totais, porDia, porProduto] = await Promise.all([
-      // Totais gerais por processo
       pool.query(`
-        SELECT
-          COUNT(*)::int as total_registros,
+        SELECT COUNT(*)::int as total_registros,
           COALESCE(SUM(total_minutos),0)::int as total_minutos,
           COALESCE(SUM(separacao),0)::int as separacao,
           COALESCE(SUM(logistica),0)::int as logistica,
@@ -194,31 +248,18 @@ app.get('/api/dashboard', auth, async (req, res) => {
           COALESCE(SUM(parado),0)::int as parado,
           COALESCE(SUM(imprevistos),0)::int as imprevistos
         FROM registros ${where}`, params),
-
-      // Registros por dia (últimos 30 dias)
       pool.query(`
-        SELECT
-          DATE(criado_em AT TIME ZONE 'America/Sao_Paulo') as dia,
-          COUNT(*)::int as qtd,
-          SUM(total_minutos)::int as minutos
+        SELECT DATE(criado_em AT TIME ZONE 'America/Sao_Paulo') as dia,
+          COUNT(*)::int as qtd, SUM(total_minutos)::int as minutos
         FROM registros ${where}
         GROUP BY dia ORDER BY dia DESC LIMIT 30`, params),
-
-      // Top produtos
       pool.query(`
-        SELECT produto_nome,
-          COUNT(*)::int as qtd,
-          SUM(total_minutos)::int as total_minutos
+        SELECT produto_nome, COUNT(*)::int as qtd, SUM(total_minutos)::int as total_minutos
         FROM registros ${where}
-        GROUP BY produto_nome
-        ORDER BY total_minutos DESC LIMIT 10`, params),
+        GROUP BY produto_nome ORDER BY total_minutos DESC LIMIT 10`, params),
     ]);
 
-    res.json({
-      totais: totais.rows[0],
-      porDia: porDia.rows,
-      porProduto: porProduto.rows,
-    });
+    res.json({ totais: totais.rows[0], porDia: porDia.rows, porProduto: porProduto.rows });
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
@@ -233,131 +274,42 @@ app.get('/api/exportar/excel', auth, async (req, res) => {
     if (inicio) { sql += ' AND criado_em >= $2'; params.push(inicio); }
     if (fim)    { sql += ` AND criado_em <= $${params.length+1}`; params.push(fim + ' 23:59:59'); }
     sql += ' ORDER BY criado_em DESC';
-
     const { rows } = await pool.query(sql, params);
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'ProduTrack Pro';
-    wb.created = new Date();
+    wb.creator = 'ProduTrack Pro'; wb.created = new Date();
 
-    // ── Aba 1: Registros detalhados
     const ws1 = wb.addWorksheet('Registros');
     ws1.columns = [
-      { header: 'Produto',      key: 'produto_nome', width: 28 },
-      { header: 'Data',         key: 'criado_em',    width: 20 },
-      { header: 'Separação',    key: 'separacao',    width: 13 },
-      { header: 'Logística',    key: 'logistica',    width: 13 },
-      { header: 'Montagem',     key: 'montagem',     width: 13 },
-      { header: 'Pintura',      key: 'pintura',      width: 13 },
-      { header: 'Acabamento',   key: 'acabamento',   width: 13 },
-      { header: 'Parado',       key: 'parado',       width: 13 },
-      { header: 'Imprevistos',  key: 'imprevistos',  width: 13 },
-      { header: 'Total (min)',  key: 'total_minutos',width: 13 },
-      { header: 'Total (h:mm)', key: 'total_hhmm',   width: 13 },
-      { header: 'Observações',  key: 'observacao',   width: 32 },
+      { header: 'Produto', key: 'produto_nome', width: 28 },
+      { header: 'Data', key: 'criado_em', width: 20 },
+      { header: 'Separação', key: 'separacao', width: 13 },
+      { header: 'Logística', key: 'logistica', width: 13 },
+      { header: 'Montagem', key: 'montagem', width: 13 },
+      { header: 'Pintura', key: 'pintura', width: 13 },
+      { header: 'Acabamento', key: 'acabamento', width: 13 },
+      { header: 'Parado', key: 'parado', width: 13 },
+      { header: 'Imprevistos', key: 'imprevistos', width: 13 },
+      { header: 'Total (min)', key: 'total_minutos', width: 13 },
+      { header: 'Total (h:mm)', key: 'total_hhmm', width: 13 },
+      { header: 'Observações', key: 'observacao', width: 32 },
     ];
-
-    // Header style
     ws1.getRow(1).eachCell(cell => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A6E' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = { bottom: { style: 'thin', color: { argb: 'FF2563EB' } } };
     });
     ws1.getRow(1).height = 24;
-
     rows.forEach((r, idx) => {
-      const h = Math.floor(r.total_minutos / 60);
-      const m = r.total_minutos % 60;
-      const row = ws1.addRow({
-        produto_nome:  r.produto_nome,
-        criado_em:     new Date(r.criado_em).toLocaleString('pt-BR'),
-        separacao:     r.separacao,
-        logistica:     r.logistica,
-        montagem:      r.montagem,
-        pintura:       r.pintura,
-        acabamento:    r.acabamento,
-        parado:        r.parado,
-        imprevistos:   r.imprevistos,
-        total_minutos: r.total_minutos,
-        total_hhmm:    `${h}h ${String(m).padStart(2,'0')}min`,
-        observacao:    r.observacao || '',
-      });
-      // Linhas alternadas
-      if (idx % 2 === 0) {
-        row.eachCell(cell => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FF' } };
-        });
-      }
-      row.getCell('total_minutos').font = { bold: true };
-      row.getCell('total_hhmm').font    = { bold: true, color: { argb: 'FF1D4ED8' } };
+      const h = Math.floor(r.total_minutos / 60), m = r.total_minutos % 60;
+      const row = ws1.addRow({ produto_nome: r.produto_nome, criado_em: new Date(r.criado_em).toLocaleString('pt-BR'), separacao: r.separacao, logistica: r.logistica, montagem: r.montagem, pintura: r.pintura, acabamento: r.acabamento, parado: r.parado, imprevistos: r.imprevistos, total_minutos: r.total_minutos, total_hhmm: `${h}h ${String(m).padStart(2,'0')}min`, observacao: r.observacao || '' });
+      if (idx % 2 === 0) row.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FF' } }; });
     });
 
-    // ── Aba 2: Resumo por processo
-    const ws2 = wb.addWorksheet('Resumo por Processo');
-    const totals = {};
-    PROCS.forEach(k => { totals[k] = rows.reduce((a, r) => a + (r[k] || 0), 0); });
-    const grandTotal = rows.reduce((a, r) => a + r.total_minutos, 0);
-
-    ws2.columns = [
-      { header: 'Processo',      key: 'proc',  width: 20 },
-      { header: 'Total (min)',   key: 'min',   width: 14 },
-      { header: 'Total (h:mm)', key: 'hhmm',  width: 14 },
-      { header: '% do Total',   key: 'pct',   width: 14 },
-    ];
-
-    ws2.getRow(1).eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A6E' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    });
-    ws2.getRow(1).height = 24;
-
-    PROCS.forEach(k => {
-      const min = totals[k];
-      const h = Math.floor(min / 60), m = min % 60;
-      const pct = grandTotal > 0 ? ((min / grandTotal) * 100).toFixed(1) + '%' : '0%';
-      ws2.addRow({ proc: PROC_LABELS[k], min, hhmm: `${h}h ${String(m).padStart(2,'0')}min`, pct });
-    });
-    // Linha total
-    const gt_h = Math.floor(grandTotal/60), gt_m = grandTotal%60;
-    const totalRow = ws2.addRow({ proc: 'TOTAL', min: grandTotal, hhmm: `${gt_h}h ${String(gt_m).padStart(2,'0')}min`, pct: '100%' });
-    totalRow.eachCell(c => { c.font = { bold: true }; c.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE0EBFF' } }; });
-
-    // ── Aba 3: Resumo por produto
-    const ws3 = wb.addWorksheet('Resumo por Produto');
-    const byProd = {};
-    rows.forEach(r => {
-      if (!byProd[r.produto_nome]) byProd[r.produto_nome] = { qtd: 0, total: 0 };
-      byProd[r.produto_nome].qtd++;
-      byProd[r.produto_nome].total += r.total_minutos;
-    });
-
-    ws3.columns = [
-      { header: 'Produto',     key: 'prod', width: 28 },
-      { header: 'Registros',   key: 'qtd',  width: 13 },
-      { header: 'Total (min)', key: 'min',  width: 14 },
-      { header: 'Total (h:mm)',key: 'hhmm', width: 14 },
-      { header: 'Média (min)', key: 'med',  width: 14 },
-    ];
-    ws3.getRow(1).eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A6E' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    });
-    ws3.getRow(1).height = 24;
-
-    Object.entries(byProd).sort((a,b) => b[1].total - a[1].total).forEach(([nome, d]) => {
-      const h = Math.floor(d.total/60), m = d.total%60;
-      ws3.addRow({ prod: nome, qtd: d.qtd, min: d.total, hhmm: `${h}h ${String(m).padStart(2,'0')}min`, med: Math.round(d.total/d.qtd) });
-    });
-
-    // Envia o arquivo
     const periodo = inicio ? `_${inicio}_a_${fim||'hoje'}` : '';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="ProduTrack${periodo}.xlsx"`);
-    await wb.xlsx.write(res);
-    res.end();
+    await wb.xlsx.write(res); res.end();
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
@@ -374,6 +326,7 @@ initDB().then(() => {
     Object.values(ifaces).flat().forEach(d => { if (d.family==='IPv4' && !d.internal) ip = d.address; });
     console.log(`\n🚀 ProduTrack Pro rodando!`);
     console.log(`📍 Local: http://localhost:${PORT}`);
-    console.log(`📱 Rede:  http://${ip}:${PORT}\n`);
+    console.log(`📱 Rede:  http://${ip}:${PORT}`);
+    console.log(`🔑 Admin: http://localhost:${PORT}/admin.html\n`);
   });
 }).catch(err => { console.error('❌ Falha ao iniciar banco:', err.message); process.exit(1); });
