@@ -12,6 +12,7 @@ const pool = new Pool({
 async function initDB() {
   const client = await pool.connect();
   try {
+    // Cria tabelas se não existirem
     await client.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
         id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,14 +46,20 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_registros_criado  ON registros(criado_em);
     `);
 
-    // Adiciona coluna status se não existir (migração para banco já existente)
+    // Migração: adiciona coluna status se não existir (sem DEFAULT para pegar NULLs)
     await client.query(`
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pendente';
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS status TEXT;
     `);
 
-    // Usuários já existentes ficam como 'ativo' automaticamente
+    // Migração: usuários antigos (sem status) ficam como 'ativo'
     await client.query(`
-      UPDATE usuarios SET status = 'ativo' WHERE status = 'pendente' AND criado_em < NOW() - INTERVAL '1 minute';
+      UPDATE usuarios SET status = 'ativo' WHERE status IS NULL;
+    `);
+
+    // Garante NOT NULL e DEFAULT 'pendente' para novos usuários
+    await client.query(`
+      ALTER TABLE usuarios ALTER COLUMN status SET NOT NULL;
+      ALTER TABLE usuarios ALTER COLUMN status SET DEFAULT 'pendente';
     `);
 
     console.log('✅ Banco de dados inicializado.');
