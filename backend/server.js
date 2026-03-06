@@ -1,6 +1,6 @@
 // ============================================================
 // server.js — ProduTrack Pro
-// Node.js + Express + PostgreSQL + JWT + Excel
+// Node.js + Express + PostgreSQL + JWT + Excel + Email
 // ============================================================
 require('dotenv').config();
 
@@ -11,12 +11,15 @@ const os        = require('os');
 const bcrypt    = require('bcryptjs');
 const jwt       = require('jsonwebtoken');
 const ExcelJS   = require('exceljs');
+const { Resend } = require('resend');
 const { pool, initDB } = require('./db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_prod';
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'admin_produtrack_2024';
+const ADMIN_EMAIL  = process.env.ADMIN_EMAIL  || '';
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 app.use(cors());
 app.use(express.json());
@@ -24,13 +27,74 @@ app.use(express.static(path.join(__dirname, '../frontend/public')));
 
 // ─── PROCS ────────────────────────────────────────────────────
 const PROCS = ['separacao','logistica','montagem','pintura','acabamento','parado','imprevistos'];
-const PROC_LABELS = {
-  separacao:'Separação', logistica:'Logística', montagem:'Montagem',
-  pintura:'Pintura', acabamento:'Acabamento', parado:'Parado', imprevistos:'Imprevistos'
-};
 
 function calcTotal(b) {
   return PROCS.reduce((acc, k) => acc + (parseInt(b[k]) || 0), 0);
+}
+
+// ─── EMAIL HELPERS ────────────────────────────────────────────
+async function enviarEmailAprovacao(email, nome) {
+  try {
+    await resend.emails.send({
+      from: 'ProduTrack Pro <onboarding@resend.dev>',
+      to: email,
+      subject: '✅ Sua conta foi aprovada — ProduTrack Pro',
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#050d1c;color:#f0f5ff;border-radius:16px;overflow:hidden">
+          <div style="background:linear-gradient(135deg,#2563eb,#06b6d4);padding:28px 32px;text-align:center">
+            <div style="font-size:2rem">⚙️</div>
+            <h1 style="margin:8px 0 0;font-size:1.4rem;font-weight:800">ProduTrack Pro</h1>
+          </div>
+          <div style="padding:32px">
+            <h2 style="color:#6ee7b7;margin-top:0">✅ Conta aprovada!</h2>
+            <p>Olá, <strong>${nome}</strong>!</p>
+            <p>Sua conta no <strong>ProduTrack Pro</strong> foi aprovada e já está ativa. Agora você pode acessar o sistema e começar a registrar sua produção.</p>
+            <div style="text-align:center;margin:28px 0">
+              <a href="https://produto-vend-vel-production-c72b.up.railway.app" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff;padding:13px 28px;border-radius:9px;text-decoration:none;font-weight:700;font-size:1rem">
+                Acessar o sistema →
+              </a>
+            </div>
+            <p style="color:#7a90b0;font-size:.85rem">Se tiver dúvidas, responda este email.</p>
+          </div>
+        </div>
+      `
+    });
+  } catch (e) {
+    console.error('Erro ao enviar email de aprovação:', e.message);
+  }
+}
+
+async function enviarEmailNovoCadastro(nomeCliente, emailCliente) {
+  if (!ADMIN_EMAIL) return;
+  try {
+    await resend.emails.send({
+      from: 'ProduTrack Pro <onboarding@resend.dev>',
+      to: ADMIN_EMAIL,
+      subject: '🔔 Novo cadastro aguardando aprovação — ProduTrack Pro',
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#050d1c;color:#f0f5ff;border-radius:16px;overflow:hidden">
+          <div style="background:linear-gradient(135deg,#7c3aed,#2563eb);padding:28px 32px;text-align:center">
+            <div style="font-size:2rem">🔔</div>
+            <h1 style="margin:8px 0 0;font-size:1.4rem;font-weight:800">Novo cadastro!</h1>
+          </div>
+          <div style="padding:32px">
+            <p>Um novo usuário se cadastrou e está aguardando sua aprovação:</p>
+            <div style="background:#0b1938;border-radius:10px;padding:16px 20px;margin:16px 0">
+              <p style="margin:4px 0"><strong>Nome:</strong> ${nomeCliente}</p>
+              <p style="margin:4px 0"><strong>Email:</strong> ${emailCliente}</p>
+            </div>
+            <div style="text-align:center;margin:28px 0">
+              <a href="https://produto-vend-vel-production-c72b.up.railway.app/admin.html" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:13px 28px;border-radius:9px;text-decoration:none;font-weight:700;font-size:1rem">
+                Acessar painel admin →
+              </a>
+            </div>
+          </div>
+        </div>
+      `
+    });
+  } catch (e) {
+    console.error('Erro ao enviar email de novo cadastro:', e.message);
+  }
 }
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
@@ -77,6 +141,9 @@ app.post('/api/auth/cadastro', async (req, res) => {
       [nome.trim(), email.toLowerCase().trim(), hash, 'pendente']
     );
 
+    // Notifica admin sobre novo cadastro
+    enviarEmailNovoCadastro(nome.trim(), email.toLowerCase().trim());
+
     res.status(201).json({
       mensagem: 'Cadastro realizado! Aguarde a aprovação do administrador para acessar o sistema.'
     });
@@ -115,7 +182,6 @@ app.get('/api/auth/me', auth, async (req, res) => {
 // ROTAS ADMIN
 // ═══════════════════════════════════════════════════════
 
-// Listar todos os usuários
 app.get('/api/admin/usuarios', adminAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -125,7 +191,6 @@ app.get('/api/admin/usuarios', adminAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Aprovar usuário
 app.post('/api/admin/usuarios/:id/aprovar', adminAuth, async (req, res) => {
   try {
     const { plano } = req.body;
@@ -134,11 +199,14 @@ app.post('/api/admin/usuarios/:id/aprovar', adminAuth, async (req, res) => {
       ['ativo', plano || 'starter', req.params.id]
     );
     if (!rows.length) return res.status(404).json({ erro: 'Usuário não encontrado' });
+
+    // Envia email de aprovação para o cliente
+    enviarEmailAprovacao(rows[0].email, rows[0].nome);
+
     res.json(rows[0]);
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Bloquear usuário
 app.post('/api/admin/usuarios/:id/bloquear', adminAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -150,7 +218,6 @@ app.post('/api/admin/usuarios/:id/bloquear', adminAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }); }
 });
 
-// Alterar plano
 app.post('/api/admin/usuarios/:id/plano', adminAuth, async (req, res) => {
   try {
     const { plano } = req.body;
@@ -278,7 +345,6 @@ app.get('/api/exportar/excel', auth, async (req, res) => {
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'ProduTrack Pro'; wb.created = new Date();
-
     const ws1 = wb.addWorksheet('Registros');
     ws1.columns = [
       { header: 'Produto', key: 'produto_nome', width: 28 },
